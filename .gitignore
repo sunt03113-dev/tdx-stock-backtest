@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+*.xlsx
+*.log
+temp_filter_result*.xlsx
+stock_backtest_run.log
