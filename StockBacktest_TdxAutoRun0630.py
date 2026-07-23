@@ -21,6 +21,7 @@ from tqdm import tqdm
 import pandas as pd
 import akshare as ak
 import platform
+import yaml
 
 # ===================== 全局配置与日志初始化 =====================
 warnings.filterwarnings("ignore")
@@ -33,20 +34,55 @@ logging.basicConfig(
 )
 logger = logging.getLogger("StockBacktest_TdxAutoRun")
 
-# 系统区分路径
+# ──────────── 配置文件加载 ────────────
+def _load_config():
+    """加载 config.yaml，不存在则使用默认值"""
+    config_path = Path(__file__).parent / "config.yaml"
+    defaults = {"tdx_base": None, "data_cache": None, "stock_names_file": None}
+    if config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                user_cfg = yaml.safe_load(f) or {}
+            defaults.update(user_cfg)
+            logger.info("已加载配置文件：%s", config_path)
+        except Exception as e:
+            logger.warning("配置文件读取失败，使用默认路径：%s", e)
+    return defaults
+
+CONFIG = _load_config()
+
+# ──────────── 路径配置（配置文件 > 系统默认） ────────────
 SYSTEM_TYPE = platform.system()
-if SYSTEM_TYPE == "Windows":
-    TDX_BASE = Path(r"D:\05_software\02_programs\TDx")
-    DATA_CACHE = Path(r"D:\数据源\day_xlsx_完整字段")
-else:
-    TDX_BASE = Path.home() / "TDx"
-    DATA_CACHE = Path.home() / "stock_data" / "day_xlsx_完整字段"
+
+def _resolve_path(cfg_key, win_default, mac_default):
+    """解析路径：优先 config.yaml，其次系统默认"""
+    if CONFIG.get(cfg_key):
+        return Path(CONFIG[cfg_key]).expanduser().resolve()
+    if SYSTEM_TYPE == "Windows":
+        return Path(win_default)
+    return Path(mac_default)
+
+TDX_BASE = _resolve_path(
+    "tdx_base",
+    win_default=r"D:\05_software\02_programs\TDx",
+    mac_default=str(Path.home() / "TDx")
+)
+DATA_CACHE = _resolve_path(
+    "data_cache",
+    win_default=r"D:\数据源\day_xlsx_完整字段",
+    mac_default=str(Path.home() / "stock_data" / "day_xlsx_完整字段")
+)
+STOCK_NAMES_FILE = None
+if CONFIG.get("stock_names_file"):
+    STOCK_NAMES_FILE = Path(CONFIG["stock_names_file"]).expanduser().resolve()
 
 DAY_DIRS = [
     str(TDX_BASE / "vipdoc" / "sh" / "lday"),
     str(TDX_BASE / "vipdoc" / "sz" / "lday")
 ]
 DATA_CACHE.mkdir(parents=True, exist_ok=True)
+
+logger.info("TDX_BASE=%s  DATA_CACHE=%s  STOCK_NAMES_FILE=%s", TDX_BASE, DATA_CACHE, STOCK_NAMES_FILE)
 
 DEFAULT_GLOBAL_START_DATE = "1990-12-19"
 DEFAULT_GLOBAL_START_DT = pd.to_datetime(DEFAULT_GLOBAL_START_DATE)
@@ -179,7 +215,15 @@ class StockNameTool:
         self.cache_df = None
     def load_cache(self):
         if self.cache_df is None:
-            self.cache_df = ak.stock_info_a_code_name()
+            # ── 优先使用本地股票名称文件（速度快、无需联网）──
+            if STOCK_NAMES_FILE and STOCK_NAMES_FILE.exists():
+                logger.info("从本地文件加载股票名称：%s", STOCK_NAMES_FILE)
+                self.cache_df = pd.read_csv(STOCK_NAMES_FILE, dtype={"code": str})
+                self.cache_df["code"] = self.cache_df["code"].str.zfill(6)
+            else:
+                # ── 回退：akshare 联网查询 ──
+                logger.info("本地股票名称文件不存在，使用 akshare 联网查询")
+                self.cache_df = ak.stock_info_a_code_name()
         return self.cache_df
     def single_code_to_name(self, code):
         try:

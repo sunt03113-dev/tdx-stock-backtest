@@ -1,0 +1,13 @@
+# ============================================================
+# tdx-stock-backtest 配置文件 (Windows 版)
+# ============================================================
+
+# --- 通达信数据根目录（vipdoc/ 的父目录）---
+tdx_base: D:\02_programs\TDx
+
+# --- 中间缓存目录（.day → .xlsx 转换中间文件）---
+data_cache: D:\tdx_cache\day_xlsx
+
+# --- 本地股票名称映射文件（可选）---
+# Windows 端通常直接跑 akshare，可不填
+# stock_names_file: D:\tdx_cache\stock_names.csv
