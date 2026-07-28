@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-0723A8 筛选规则 —— 直接读取通达信 .day 二进制文件（跳过 xlsx 转换，速度快 50 倍）
+规则A9 筛选 —— 直接读取通达信 .day 二进制文件
+与0723A8筛选逻辑一致，输出字段差异：
+  - D1-D3区间振幅（替代D1-D2）
+  - 新增 D6~BaseDay-1 最大振幅日及日期
 """
-import sys, struct, time
+import sys, time
 from pathlib import Path
-from datetime import datetime
 import argparse
 import numpy as np
 import pandas as pd
@@ -14,22 +16,16 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from StockBacktest_TdxAutoRun0630 import (
-    is_strong_limit_up, get_20day_window, is_window_max,
-    TDX_BASE, DATA_CACHE, SYSTEM_TYPE, STOCK_NAMES_FILE, StockNameTool
+    is_strong_limit_up, TDX_BASE, SYSTEM_TYPE, StockNameTool
 )
 
-# 输出路径
-if SYSTEM_TYPE == "Windows":
-    OUTPUT_DIR = Path(r"D:\筛选结果\0723A8")
-else:
-    OUTPUT_DIR = Path("/Users/kk/.trae-cn/work/6a61d7fc28cdcd13cf3df8cd/results/0723A8")
+OUTPUT_DIR = Path("/Users/kk/.trae-cn/work/6a61d7fc28cdcd13cf3df8cd/results/A9")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_FILE = OUTPUT_DIR / "0723A8_backtest.xlsx"
+OUTPUT_FILE = OUTPUT_DIR / "A9_backtest.xlsx"
 
 DEFAULT_START = "1990-12-19"
 DEFAULT_END = "2099-12-31"
 
-# .day 文件目录
 DAY_DIRS = [
     str(TDX_BASE / "vipdoc" / "sh" / "lday"),
     str(TDX_BASE / "vipdoc" / "sz" / "lday")
@@ -37,22 +33,18 @@ DAY_DIRS = [
 
 
 def board(code):
-    code = str(code).replace("sh","").replace("sz","").zfill(6)
-    code = str(code).zfill(6)
+    code = str(code).replace("sh", "").replace("sz", "").zfill(6)
     if code.startswith(("600", "601", "603", "605", "000", "001", "002", "003")):
         return "main"
     return "other"
 
 
 def read_day_file(filepath):
-    """快速读取通达信 .day 二进制文件，返回 numpy 数组"""
     raw = np.fromfile(filepath, dtype=np.uint8)
     if len(raw) == 0:
         return None
     n = len(raw) // 32
     raw = raw[:n * 32].reshape(n, 32)
-
-    # 解析 32 字节记录: date(int32), open(int32), high(int32), low(int32), close(int32), amount(float32), volume(int32), reserved(int32)
     dates = raw[:, 0:4].copy().view(np.int32).flatten()
     opens = raw[:, 4:8].copy().view(np.int32).flatten() / 100.0
     highs = raw[:, 8:12].copy().view(np.int32).flatten() / 100.0
@@ -60,7 +52,6 @@ def read_day_file(filepath):
     closes = raw[:, 16:20].copy().view(np.int32).flatten() / 100.0
     amounts = raw[:, 20:24].copy().view(np.float32).flatten()
     volumes = raw[:, 24:28].copy().view(np.int32).flatten()
-
     return dates, opens, highs, lows, closes, amounts, volumes
 
 
@@ -76,38 +67,34 @@ def range_amplitude(highs_slice, lows_slice, base_close):
     return (max(highs_slice) - min(lows_slice)) / base_close * 100
 
 
+def fmt_date(d_int):
+    return f"{d_int // 10000:04d}-{d_int % 10000 // 100:02d}-{d_int % 100:02d}"
+
+
 def screen_one(code, day_file, start_int, end_int):
-    """对单只股票进行 0723A8 规则筛选"""
     result = read_day_file(day_file)
     if result is None:
         return []
     dates_raw, opens, highs, lows, closes, amounts, volumes = result
 
-    # 日期过滤 (YYYYMMDD -> int 比较)
     mask = (dates_raw >= start_int) & (dates_raw <= end_int)
     if mask.sum() == 0:
         return []
-
     dates_raw = dates_raw[mask]
-    opens = opens[mask]
-    highs = highs[mask]
-    lows = lows[mask]
-    closes = closes[mask]
-    amounts = amounts[mask]
-    volumes = volumes[mask]
+    opens, highs, lows, closes, amounts, volumes = (
+        opens[mask], highs[mask], lows[mask], closes[mask], amounts[mask], volumes[mask]
+    )
 
     n = len(dates_raw)
     if n < 30:
         return []
 
-    # 将日期转为 pandas datetime 用于 is_strong_limit_up
     dates_pd = pd.to_datetime(dates_raw.astype(str), format='%Y%m%d')
 
-    # 预计算涨停标记
     limits = np.zeros(n, dtype=bool)
     for i in range(1, n):
         limits[i] = is_strong_limit_up(
-            float(closes[i]), float(highs[i]), float(closes[i-1]),
+            float(closes[i]), float(highs[i]), float(closes[i - 1]),
             dates_pd[i], code
         )
 
@@ -115,17 +102,12 @@ def screen_one(code, day_file, start_int, end_int):
     for d1 in range(1, n - 25):
         d2, d3, d4, d5, d6 = d1 + 1, d1 + 2, d1 + 3, d1 + 4, d1 + 5
 
-        # 条件1: 仅 D4 涨停
         if limits[d1] or limits[d2] or limits[d3] or not limits[d4] or limits[d5]:
             continue
-
-        # 条件1: D2-D5 高低点非递降
-        h = highs[d1:d5+1]
-        l = lows[d1:d5+1]
-        if any(h[i] < h[i-1] or l[i] < l[i-1] for i in range(1, 5)):
+        h = highs[d1:d5 + 1]
+        l = lows[d1:d5 + 1]
+        if any(h[i] < h[i - 1] or l[i] < l[i - 1] for i in range(1, 5)):
             continue
-
-        # 条件2: D6 不涨停
         if limits[d6]:
             continue
 
@@ -134,27 +116,21 @@ def screen_one(code, day_file, start_int, end_int):
         d5_close = closes[d5]
         d0_close = closes[d1 - 1]
 
-        # 条件3+4: 搜索 BaseDay
         base_day = None
         for idx in range(d5 + 2, min(d5 + 12, n)):
             if idx < 20:
                 continue
-            # 3.① BaseDay 涨停
             if not limits[idx]:
                 continue
-            # 3.② BaseDay 最高价非20日窗口最大
             w_start = max(0, idx - 19)
-            w_highs = highs[w_start:idx+1]
-            w_amts = amounts[w_start:idx+1]
+            w_highs = highs[w_start:idx + 1]
+            w_amts = amounts[w_start:idx + 1]
             if len(w_highs) < 20:
                 continue
             if highs[idx] >= w_highs.max():
                 continue
-            # 3.③ BaseDay 成交额非20日窗口最大
             if amounts[idx] >= w_amts.max():
                 continue
-
-            # 条件4: D6~BaseDay-1 压制
             interval_ok = True
             for s in range(d6, idx):
                 if highs[s] > d5_high or amounts[s] > d5_amt:
@@ -162,33 +138,36 @@ def screen_one(code, day_file, start_int, end_int):
                     break
             if not interval_ok:
                 break
-
             base_day = idx
             break
 
         if base_day is None:
             continue
 
-        # ========== 指标计算 ==========
-        amp_d1 = daily_amplitude(highs[d1], lows[d1], closes[d1-1])
+        amp_d1 = daily_amplitude(highs[d1], lows[d1], closes[d1 - 1])
         amp_d2 = daily_amplitude(highs[d2], lows[d2], closes[d1])
         amp_d3 = daily_amplitude(highs[d3], lows[d3], closes[d2])
         amp_d4 = daily_amplitude(highs[d4], lows[d4], closes[d3])
         amp_d5 = daily_amplitude(highs[d5], lows[d5], closes[d4])
 
-        amp_d1_d2 = range_amplitude(highs[d1:d3], lows[d1:d3], d0_close)
+        amp_d1_d3 = range_amplitude(highs[d1:d4], lows[d1:d4], d0_close)
         amp_d1_d5 = range_amplitude(highs[d1:d6], lows[d1:d6], d0_close)
 
         interval_days = base_day - d6
 
+        max_amp_val = -1.0
+        for s in range(d6, base_day):
+            a = daily_amplitude(highs[s], lows[s], closes[s - 1])
+            if a > max_amp_val:
+                max_amp_val = a
+                # max_amp_date removed
+        max_amp_str = f"{max_amp_val:.2f}"
+
         base_day_prev_close = closes[base_day - 1]
         interval_inc = (base_day_prev_close - d5_close) / d5_close * 100 if d5_close > 0 else 0.0
-
         interval_amp = range_amplitude(highs[d6:base_day], lows[d6:base_day], d5_close)
-
         amp_base = daily_amplitude(highs[base_day], lows[base_day], closes[base_day - 1])
 
-        # 额外字段: T+0~T+7
         base_close = closes[base_day]
         t_fields = {}
         for t_off in range(8):
@@ -197,35 +176,31 @@ def screen_one(code, day_file, start_int, end_int):
                 if t_off == 0:
                     low_pct = (lows[t_idx] - base_close) / base_close * 100
                     high_pct = (highs[t_idx] - base_close) / base_close * 100
-                    t_fields["T+0(低/高)"] = f"{low_pct:+.2f}%/{high_pct:+.2f}%"
+                    _li = int(low_pct)
+                    low_val = _li if low_pct <= 0 or low_pct == _li else _li + 1
+                    t_fields["T+0(低/高)"] = f"{low_val:+d}%/{int(high_pct):+d}%"
                 else:
                     high_pct = (highs[t_idx] - base_close) / base_close * 100
-                    t_fields[f"T+{t_off}最高价"] = f"{high_pct:+.2f}%"
+                    t_fields[f"T+{t_off}最高价"] = f"{int(high_pct):+d}%"
             else:
-                if t_off == 0:
-                    t_fields["T+0(低/高)"] = "N/A"
-                else:
-                    t_fields[f"T+{t_off}最高价"] = "N/A"
-
-        # 日期格式化
-        bd_date = dates_raw[base_day]
-        bd_str = f"{bd_date//10000:04d}-{bd_date%10000//100:02d}-{bd_date%100:02d}"
+                t_fields["T+0(低/高)" if t_off == 0 else f"T+{t_off}最高价"] = "N/A"
 
         row = {
             "股票代码": str(code).zfill(6),
             "股票名称": "",
-            "BaseDay日期": bd_str,
+            "BaseDay日期": fmt_date(dates_raw[base_day]),
             "D1振幅": f"{amp_d1:.2f}%",
             "D2振幅": f"{amp_d2:.2f}%",
             "D3振幅": f"{amp_d3:.2f}%",
             "D4振幅": f"{amp_d4:.2f}%",
             "D5振幅": f"{amp_d5:.2f}%",
-            "D1-D2区间振幅": f"{amp_d1_d2:.2f}%",
+            "D1-D3区间振幅": f"{amp_d1_d3:.2f}%",
             "D1-D5区间总振幅": f"{amp_d1_d5:.2f}%",
             "D6至BaseDay前交易日数量": int(interval_days),
+            "区间最大振幅": max_amp_str,
             "D6至BaseDay前区间涨幅": f"{interval_inc:+.2f}%",
             "D6至BaseDay前区间振幅": f"{interval_amp:.2f}%",
-            "BaseDay当日振幅": f"{amp_base:.2f}%",
+            "BaseDay当日振幅": f"{amp_base:.2f}",
         }
         row.update(t_fields)
         rows.append(row)
@@ -233,11 +208,11 @@ def screen_one(code, day_file, start_int, end_int):
     return rows
 
 
-def run_0723a8(start_date=DEFAULT_START, end_date=DEFAULT_END):
+def run_a9(start_date=DEFAULT_START, end_date=DEFAULT_END):
     start_int = int(start_date.replace("-", ""))
     end_int = int(end_date.replace("-", ""))
     print(f"日期范围: {start_date} ~ {end_date}")
-    print(f"数据源: 直接读取 .day 二进制文件（跳过 xlsx 转换）")
+    print(f"数据源: 直接读取 .day 二进制文件")
 
     print("\n===== 阶段1: 收集 .day 文件 =====")
     all_files = []
@@ -252,12 +227,12 @@ def run_0723a8(start_date=DEFAULT_START, end_date=DEFAULT_END):
         print("  [错误] 未找到 .day 文件")
         return
 
-    print(f"\n===== 阶段2: 0723A8规则筛选 =====")
+    print(f"\n===== 阶段2: 规则A9筛选 =====")
     t0 = time.time()
     results = []
-    for f in tqdm(main_files, desc="  0723A8筛选"):
+    for f in tqdm(main_files, desc="  A9筛选"):
         try:
-            code = f.stem.replace("sh","").replace("sz","")
+            code = f.stem.replace("sh", "").replace("sz", "")
             output = screen_one(code, f, start_int, end_int)
             results.extend(output)
         except Exception as exc:
@@ -272,8 +247,6 @@ def run_0723a8(start_date=DEFAULT_START, end_date=DEFAULT_END):
         return
 
     result_df = pd.DataFrame(results)
-
-    # 股票名称匹配
     try:
         name_tool = StockNameTool()
         name_df = name_tool.load_cache()
@@ -289,8 +262,8 @@ def run_0723a8(start_date=DEFAULT_START, end_date=DEFAULT_END):
     columns = [
         "股票代码", "股票名称", "BaseDay日期",
         "D1振幅", "D2振幅", "D3振幅", "D4振幅", "D5振幅",
-        "D1-D2区间振幅", "D1-D5区间总振幅",
-        "D6至BaseDay前交易日数量",
+        "D1-D3区间振幅", "D1-D5区间总振幅",
+        "D6至BaseDay前交易日数量", "区间最大振幅",
         "D6至BaseDay前区间涨幅", "D6至BaseDay前区间振幅",
         "BaseDay当日振幅",
         "T+0(低/高)",
@@ -303,8 +276,8 @@ def run_0723a8(start_date=DEFAULT_START, end_date=DEFAULT_END):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="0723A8 涨停形态筛选")
+    parser = argparse.ArgumentParser(description="规则A9 涨停形态筛选")
     parser.add_argument("--start", type=str, default=DEFAULT_START)
     parser.add_argument("--end", type=str, default=DEFAULT_END)
     args = parser.parse_args()
-    run_0723a8(start_date=args.start, end_date=args.end)
+    run_a9(start_date=args.start, end_date=args.end)

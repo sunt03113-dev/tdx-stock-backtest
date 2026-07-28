@@ -1,20 +1,3 @@
-# ============================================================
-# tdx-stock-backtest 配置文件
-# 修改此文件即可切换路径，无需改动 Python 源码
-# ============================================================
-
-# --- 通达信数据根目录（vipdoc/ 的父目录）---
-# Windows 示例: D:\02_programs\TDx
-# Mac 示例: ~/Documents/TDx
 tdx_base: ~/Documents/TDx
-
-# --- 中间缓存目录（.day → .xlsx 转换中间文件）---
-# Windows 示例: D:\tdx_cache\day_xlsx
-# Mac 示例: ~/tdx_cache/day_xlsx
-data_cache: ~/tdx_cache/day_xlsx
-
-# --- 本地股票名称映射文件（可选）---
-# 如果该文件存在，优先使用本地文件，速度快且无需联网
-# 如果不存在，自动回退到 akshare 联网查询
-# Mac 示例: ~/tdx_cache/stock_names.csv
-stock_names_file: ~/tdx_cache/stock_names.csv
+data_cache: /Users/kk/.trae-cn/work/6a61d7fc28cdcd13cf3df8cd/day_xlsx
+stock_names_file: /Users/kk/.trae-cn/work/6a61d7fc28cdcd13cf3df8cd/stock_names.csv

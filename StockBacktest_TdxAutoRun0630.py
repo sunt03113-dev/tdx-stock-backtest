@@ -25,7 +25,7 @@ import yaml
 
 # ===================== 全局配置与日志初始化 =====================
 warnings.filterwarnings("ignore")
-LOG_FILE = "stock_backtest_run.log"
+LOG_FILE = "/tmp/stock_backtest_run.log"
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,

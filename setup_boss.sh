@@ -22,7 +22,7 @@ CACHE_DIR="$HOME/tdx_cache"
 # ============================================================
 # 步骤 1: 检查 Python 3
 # ============================================================
-echo -e "${G}【1/6】检查 Python 环境...${N}"
+echo -e "${G}【1/7】检查 Python 环境...${N}"
 if ! command -v python3 &> /dev/null; then
     echo -e "${R}  未找到 python3，请先安装：${N}"
     echo -e "  ${Y}brew install python@3.10${N}"
@@ -35,7 +35,7 @@ echo ""
 # ============================================================
 # 步骤 2: 克隆/更新代码
 # ============================================================
-echo -e "${G}【2/6】获取最新代码...${N}"
+echo -e "${G}【2/7】获取最新代码...${N}"
 if [ -d "$SKILL_DIR/.git" ]; then
     cd "$SKILL_DIR"
     git pull origin master 2>/dev/null || true
@@ -50,7 +50,7 @@ echo ""
 # ============================================================
 # 步骤 3: 安装依赖
 # ============================================================
-echo -e "${G}【3/6】安装 Python 依赖...${N}"
+echo -e "${G}【3/7】安装 Python 依赖...${N}"
 pip3 install --user pandas numpy akshare openpyxl tqdm pyyaml cos-python-sdk-v5 2>/dev/null || \
 pip3 install --break-system-packages pandas numpy akshare openpyxl tqdm pyyaml cos-python-sdk-v5 2>/dev/null || \
 pip3 install pandas numpy akshare openpyxl tqdm pyyaml cos-python-sdk-v5
@@ -60,7 +60,7 @@ echo ""
 # ============================================================
 # 步骤 4: 配置 COS 凭证
 # ============================================================
-echo -e "${G}【4/6】配置腾讯云 COS 凭证...${N}"
+echo -e "${G}【4/7】配置腾讯云 COS 凭证...${N}"
 COS_FILE="$HOME/.tdx_cos_env"
 
 if [ -f "$COS_FILE" ]; then
@@ -89,7 +89,7 @@ echo ""
 # ============================================================
 # 步骤 5: 从 COS 下载日线数据
 # ============================================================
-echo -e "${G}【5/6】从 COS 下载日线数据...${N}"
+echo -e "${G}【5/7】从 COS 下载日线数据...${N}"
 
 # 创建目录
 mkdir -p "$TDX_DIR/vipdoc/sh/lday"
@@ -221,7 +221,7 @@ echo ""
 # ============================================================
 # 步骤 6: 生成配置文件
 # ============================================================
-echo -e "${G}【6/6】生成配置文件...${N}"
+echo -e "${G}【6/7】生成配置文件...${N}"
 cat > "$SKILL_DIR/config.yaml" << EOF
 # tdx-stock-backtest 配置文件（自动生成）
 tdx_base: ~/Documents/TDx
@@ -229,6 +229,23 @@ data_cache: $CACHE_DIR/day_xlsx
 stock_names_file: $CACHE_DIR/stock_names.csv
 EOF
 echo -e "  config.yaml 已生成 ${G}✓${N}"
+echo ""
+
+# ============================================================
+# 步骤 7: 安装 TRAE 全局 Skill
+# ============================================================
+echo -e "${G}【7/7】安装 TRAE Skill...${N}"
+TRAE_SKILL_DIR="$HOME/.trae-cn/skills/tdx-stock-backtest"
+mkdir -p "$TRAE_SKILL_DIR"
+
+# 复制 skill 定义文件
+if [ -f "$SKILL_DIR/tdx-stock-backtest.md" ]; then
+    cp "$SKILL_DIR/tdx-stock-backtest.md" "$TRAE_SKILL_DIR/SKILL.md"
+    echo -e "  Skill 已安装到 ~/.trae-cn/skills/ ${G}✓${N}"
+    echo -e "  ${Y}请在 TRAE Work 中新建对话即可自动识别此 Skill${N}"
+else
+    echo -e "  ${Y}未找到 tdx-stock-backtest.md，跳过 Skill 安装${N}"
+fi
 echo ""
 
 # ============================================================

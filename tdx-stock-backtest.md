@@ -1,61 +1,95 @@
 ---
 name: tdx-stock-backtest
-description: Use for TDX local daily-stock backtests with StockBacktest_TdxAutoRun0630.py: parse .day files, cache full A-share history from 1990-12-19, run timing-rule screens, and export Excel. Detect limit-up dynamically by trade date, board, and target type; count only strong close-sealed limit-ups.
+description: A股涨停形态回测引擎。直接读取通达信.day二进制文件，全量日线数据回测，动态涨跌停判定，支持A9/B9等多规则时序筛选，输出Excel。用于本地股票数据筛选、涨停形态回测、规则验证。
 ---
 # tdx-stock-backtest
 
-## Main Files
-- `StockBacktest_TdxAutoRun0630.py`: the executable backtest script (Module 1: TDX .day→Excel, Module 2: screening, Module 3: name matching).
-- `five_day_z_backtest.py`: full-market five-day rising structure and subsequent Z-day limit-up screen (D3-limit-up variant).
-- `0715A_backtest.py` (at `D:\筛选结果\0715\`): 0715A rule variant — D4-limit-up, 1-10 day Z-gap, integrated with Module1 auto-update.
-- `tdx-stock-backtest.md`: this skill contract.
+## 适用场景
+- 用户需要运行 A 股涨停形态回测筛选
+- 用户需要验证某只股票是否满足特定规则（如 A9/B9）
+- 用户需要整理筛选规则并输出 Excel 结果
+- 用户提到 TDX、通达信、日线数据、涨停、回测、筛选规则
 
-## Rule 0715A: Five-Day D4-Limit-Up + Z-Day Screen
-Run `0715A_backtest.py`:
-- `python 0715A_backtest.py` — use existing cache, full history
-- `python 0715A_backtest.py --update` — refresh TDX data via Module1 first, then screen
-- `python 0715A_backtest.py --start 2020-01-01 --end 2025-12-31` — date range filter
+## 核心文件
+- `StockBacktest_TdxAutoRun0630.py`: 核心引擎（TDX .day 解析 + 动态涨停判定 + 股票名称匹配）
+- `A9_backtest.py`: A9 规则筛选脚本
+- `B9_backtest.py`: B9 规则筛选脚本
+- `0723A8_backtest.py`: 0723A8 规则筛选脚本
+- `config.yaml`: 配置文件（数据路径）
 
-**Core rule:**
-- D1-D5 consecutive: only D4 is a 10% strong close-sealed limit-up; D1/D2/D3/D5 are NOT.
-- D2-D5 highs and lows are non-decreasing (Hi≥Hi-1 and Li≥Li-1 for i=2,3,4,5).
-- Z = next limit-up after D5, gap = 1~10 trading days (z-d5-1, excluding D5 and Z).
-- Z must be: 20-day highest price AND 20-day max turnover.
-- Only main-board 10cm stocks (600/601/603/605/000/001/002/003).
+## 运行命令
+```bash
+# A9 规则回测
+cd ~/tdx-stock-backtest && python3 A9_backtest.py
 
-**Output columns:** 股票代码, 股票名称, Z日涨停日期, 三日区间振幅+D4振幅+D5振幅, 5日区间涨幅*区间振幅, 间隔交易日天数, Z日涨停振幅, 间隔交易日区间涨幅, 间隔交易日区间振幅
+# B9 规则回测
+cd ~/tdx-stock-backtest && python3 B9_backtest.py
 
-## Legacy Five-Day Z Screen (D3 variant)
-Run `five_day_z_backtest.py` for the D1-D5 structure: only D3 is a 10% strong close-sealed limit-up; D2-D5 highs and lows are non-decreasing; the next limit-up after D5 must occur in 1-13 trading days and be the 20-day high-price and turnover maximum.
+# 指定日期范围
+python3 A9_backtest.py --start 2020-01-01 --end 2025-12-31
 
-## Backtest Start Baseline
-- Global default start date is `1990-12-19` so old-share history is not truncated.
-- Each stock starts from its first local TDX `.day` bar, treated as the stock listing first day.
-- If a listing/first-bar date cannot be identified, fall back to `1990-12-19`.
-- Module 1 always converts from the full-history baseline even when a later legacy `start_date` is supplied.
+# 验证某只股票是否满足规则
+# 告知 AI 股票代码和 BaseDay，AI 会编写验证脚本逐一检查规则条件
+```
 
-## Dynamic Limit Rules
-Do not hard-code a fixed 10% or 20% limit-up rule. All modules must call `is_strong_limit_up()`.
+## A9 规则
+适用标的：全市场 10cm 涨跌幅个股（600/601/603/605/000/001/002/003）
 
-- Match by trade date + stock board + target type.
-- Before `1996-12-16`, A-share fixed daily price limits are not applied; limit-up flag is False.
-- Main-board normal stocks use 10%.
-- STAR Market `688xxx`: 20% from `2019-07-22`.
-- ChiNext `300xxx/301xxx`: 10% before `2020-08-24`, 20% from `2020-08-24` for both existing and newly listed stocks.
-- BSE-style codes use 30%.
-- ST/risk-warning/delisting targets use 5%.
+**前结构 D1-D6：**
+- D1-D5 连续 5 根交易日 K 线
+- D4 为涨停日，D1/D2/D3/D5 均非涨停
+- D2-D5 每日最高价 ≥ 前日最高价，最低价 ≥ 前日最低价（单调递增）
+- D6 非涨停
 
-## Strong Limit-Up Definition
-A valid limit-up is a strong close-sealed limit-up:
+**BaseDay 筛选：**
+- 在 D5+2 ~ D5+11 范围内寻找第一个涨停日作为 BaseDay
+- BaseDay 不为近 20 日最高价
+- BaseDay 不为近 20 日最大成交额
+- D6 ~ BaseDay-1 区间内没有任何一天的最高价超过 D5 最高价，或成交额超过 D5 成交额
 
-- 最高价 ≥ 理论涨停价（Decimal高精度计算，四舍五入保留2位小数）；
-- 收盘价 ≥ 理论涨停价（Decimal高精度计算，四舍五入保留2位小数）；
-- 盘中触及涨停但收盘低于涨停价不算涨停；
-- 高精度计算消除浮点误差，≥ 判断避免数据精度造成的误判。
+**输出字段（23列）：**
+股票代码, 股票名称, BaseDay日期, D1振幅, D2振幅, D3振幅, D4振幅, D5振幅, D1-D3区间振幅, D1-D5区间总振幅, D6至BaseDay前交易日数量, 区间最大振幅, D6至BaseDay前区间涨幅, D6至BaseDay前区间振幅, BaseDay当日振幅, T+0(低/高), T+1最高价~T+7最高价
 
-## Constraints
-- Treat `limit_type` as optional backward compatibility only; it never decides the actual limit percentage.
-- Do not restore code-prefix filtering such as 10cm = `60/00`, 20cm = `30/688`.
-- Do not treat all ChiNext history as 20%; the exact split date is `2020-08-24`.
-- Do not extrapolate STAR 20% rules before `2019-07-22`.
-- Never delete or rewrite original TDX `.day` source files.
+## B9 规则
+适用标的：全市场 10cm 涨跌幅个股
+
+**前结构 D1-D6：**
+- D3 和 D4 同时涨停（双涨停）
+- D1/D2/D5/D6 均非涨停
+- D2-D5 高低点单调递增
+
+**BaseDay 筛选：**
+- 在 D5+2 ~ D5+14 范围内寻找 BaseDay
+- BaseDay 涨停且非 20 日最强
+- D6 ~ BaseDay-1 区间无突破 D5 天花板
+
+## 数据源
+- 通达信 `.day` 二进制文件
+- 目录：`~/Documents/TDx/vipdoc/sh/lday/` 和 `~/Documents/TDx/vipdoc/sz/lday/`
+- 股票名称优先使用本地 `stock_names.csv`，未找到时回退 akshare 联网查询
+
+## 回测起始基准
+- 全局默认起始日期 `1990-12-19`（覆盖老八股开市全量行情）
+- 每只股票从其本地 `.day` 文件首根 K 线开始
+
+## 动态涨跌停规则
+所有模块必须调用 `is_strong_limit_up()`，不可硬编码涨跌幅比例：
+- 按交易日期 + 股票板块 + 标的类型动态匹配
+- 1996-12-16 前无涨跌停限制
+- 主板普通股 10%
+- 科创板 688xxx：2019-07-22 起 20%
+- 创业板 300xxx/301xxx：2020-08-24 起 20%，此前 10%
+- 北交所 30%
+- ST/风险警示/退市标的 5%
+
+## 强封涨停定义
+- 最高价 ≥ 理论涨停价（Decimal 高精度计算，四舍五入保留 2 位小数）
+- 收盘价 ≥ 理论涨停价
+- 盘中触及涨停但收盘低于涨停价不算涨停
+
+## 约束
+- 不可硬编码涨跌幅比例，必须调用 `is_strong_limit_up()`
+- 不可恢复代码前缀过滤（如 10cm=60/00，20cm=30/688）
+- 创业板 20% 切换日期精确为 2020-08-24
+- 科创板 20% 不早于 2019-07-22
+- 永不删除或重写原始 TDX `.day` 源文件
