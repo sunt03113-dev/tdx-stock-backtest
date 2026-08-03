@@ -18,11 +18,8 @@ from StockBacktest_TdxAutoRun0630 import (
     TDX_BASE, DATA_CACHE, SYSTEM_TYPE, STOCK_NAMES_FILE, StockNameTool
 )
 
-# 输出路径
-if SYSTEM_TYPE == "Windows":
-    OUTPUT_DIR = Path(r"D:\筛选结果\0723A8")
-else:
-    OUTPUT_DIR = Path("/Users/kk/.trae-cn/work/6a61d7fc28cdcd13cf3df8cd/results/0723A8")
+# 输出路径（相对路径，跨平台兼容）
+OUTPUT_DIR = SCRIPT_DIR / "results" / "0723A8"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "0723A8_backtest.xlsx"
 

@@ -2,7 +2,7 @@
 # ============================================================
 # tdx-stock-backtest 老板一键部署脚本
 # 用法: bash setup_boss.sh
-# 完成后即可运行 A9/B9 回测
+# 完成后即可运行 A9/B9/0803/0723A8 回测
 # ============================================================
 set -e
 
@@ -262,16 +262,24 @@ echo -e "  数据文件:  沪市 ${SH_COUNT} + 深市 ${SZ_COUNT} 个"
 echo ""
 echo -e "${Y}  ── 日常使用 ──${N}"
 echo ""
-echo -e "  运行 A9 回测:"
+echo -e "  运行 A9 回测 (10cm 主板):"
 echo -e "    cd ~/tdx-stock-backtest && python3 A9_backtest.py"
 echo ""
-echo -e "  运行 B9 回测:"
+echo -e "  运行 B9 回测 (10cm 主板):"
 echo -e "    cd ~/tdx-stock-backtest && python3 B9_backtest.py"
 echo ""
-echo -e "  更新代码:"
+echo -e "  运行 0803 回测 (20cm 科创板/创业板):"
+echo -e "    cd ~/tdx-stock-backtest && python3 0803_backtest.py"
+echo ""
+echo -e "  运行 0723A8 回测 (10cm 主板):"
+echo -e "    cd ~/tdx-stock-backtest && python3 0723A8_backtest.py"
+echo ""
+echo -e "  结果输出到: ~/tdx-stock-backtest/results/<规则名>/"
+echo ""
+echo -e "  更新代码+数据:"
 echo -e "    cd ~/tdx-stock-backtest && bash update_skill.sh"
 echo ""
-echo -e "  重新下载数据:"
+echo -e "  重新下载全部数据:"
 echo -e "    cd ~/tdx-stock-backtest && bash setup_boss.sh"
 echo ""
 echo -e "${B}========================================${N}"

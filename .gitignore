@@ -5,3 +5,11 @@ __pycache__/
 *.log
 temp_filter_result*.xlsx
 stock_backtest_run.log
+
+# 输出结果目录
+results/
+# 本地配置（含路径，每台机器不同）
+config.yaml
+config_windows.yaml
+# COS 凭证
+.tdx_cos_env

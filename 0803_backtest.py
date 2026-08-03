@@ -29,7 +29,7 @@ from StockBacktest_TdxAutoRun0630 import (
     is_strong_limit_up, TDX_BASE, SYSTEM_TYPE, StockNameTool
 )
 
-OUTPUT_DIR = Path("/Users/kk/.trae-cn/work/6a61d7fc28cdcd13cf3df8cd/results/0803")
+OUTPUT_DIR = SCRIPT_DIR / "results" / "0803"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_FILE = OUTPUT_DIR / "0803_backtest.xlsx"
 
