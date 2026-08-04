@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
 规则0803 筛选 —— 20cm 标的（科创板 688xxx、创业板 300xxx/301xxx）
-时间线：D-4 → D-3 → D-2 → D-1 → D0 → T+0 → ... → T+6
+时间线：D-5 → D-4 → D-3 → D-2 → D-1 → D0 → T+0 → ... → T+6
 
 筛选条件：
   D-1：涨停；股价（20日）最高；成交额（20日）最大
   D0：不是涨停
-  D-2/D-3/D-4：不是涨停；成交额不是 20 日窗口最大
+  D-2/D-3/D-4/D-5：不是涨停；成交额不是 20 日窗口最大
 
 输出指标：
-  D-1振幅（单日，不带%）、D0涨幅（带%）、D0振幅（单日，不带%）、
-  D0/D-1成交额百分比（带%）、T+0(低/高) ~ T+6最高价（基准价=D0收盘价）
+  D-1振幅（单日，不带%）、D0涨幅（带+号，不带%）、D0振幅（单日，不带%）、
+  D0阴/阳、D0/D-1成交额百分比（带%）、
+  T+0(低/高)(阴/阳/板) ~ T+6最高价(阴/阳/板)（基准价=D0收盘价）
 """
 import sys
 import time
@@ -87,6 +88,20 @@ def fmt_tn(val_pct):
     return math.floor(val_pct)  # -1.1 → -2, 1.1 → 1
 
 
+def fmt_no_sign(val):
+    """正数不加+号，负数带-号"""
+    return f"{val}"
+
+
+def candle_form(open_val, close_val, is_limit):
+    """判断K线形态：板/阳/阴"""
+    if is_limit:
+        return "板"
+    if close_val > open_val:
+        return "阳"
+    return "阴"
+
+
 def screen_one(code, day_file, start_int, end_int):
     result = read_day_file(day_file)
     if result is None:
@@ -117,12 +132,13 @@ def screen_one(code, day_file, start_int, end_int):
         )
 
     rows = []
-    # D-1 在索引 i 处，需要 i-3 >= 1（D-4 需要前一天收盘），且 i+8 < n（T+6）
-    for i in range(3, n - 8):
+    # D-1 在索引 i 处，需要 i-4 >= 1（D-5 需要前一天收盘），且 i+8 < n（T+6）
+    for i in range(4, n - 8):
         dm1 = i       # D-1
         dm2 = i - 1   # D-2
         dm3 = i - 2   # D-3
         dm4 = i - 3   # D-4
+        dm5 = i - 4   # D-5
         d0 = i + 1    # D0
 
         # === D-1 条件：涨停 ===
@@ -173,13 +189,25 @@ def screen_one(code, day_file, start_int, end_int):
             if amounts[dm4] >= w_amts_dm4.max():
                 continue
 
+        # === D-5 条件：不是涨停；成交额不是 20 日窗口最大 ===
+        if limits[dm5]:
+            continue
+        if dm5 >= 19:
+            w_start_dm5 = dm5 - 19
+            w_amts_dm5 = amounts[w_start_dm5:dm5 + 1]
+            if amounts[dm5] >= w_amts_dm5.max():
+                continue
+
         # === 计算输出指标 ===
 
         # D-1 振幅（单日，不带 %）
         amp_dm1 = daily_amplitude(highs[dm1], lows[dm1], closes[dm2])
 
-        # D0 涨幅（带 %）
+        # D0 涨幅（带+号，不带 %）
         d0_gain = (closes[d0] - closes[dm1]) / closes[dm1] * 100 if closes[dm1] > 0 else 0.0
+
+        # D0 阴/阳
+        d0_form = candle_form(opens[d0], closes[d0], limits[d0])
 
         # D0 振幅（单日，不带 %）
         amp_d0 = daily_amplitude(highs[d0], lows[d0], closes[dm1])
@@ -193,18 +221,20 @@ def screen_one(code, day_file, start_int, end_int):
         for t_off in range(7):
             t_idx = d0 + 1 + t_off
             if t_idx < n and base_close > 0:
+                # 判断当日 K 线形态
+                form = candle_form(opens[t_idx], closes[t_idx], limits[t_idx])
                 if t_off == 0:
-                    # T+0: 输出低/高，按规则①取整
+                    # T+0: 输出低/高(阴/阳/板)，为正不用+号，按规则①取整
                     low_pct = (lows[t_idx] - base_close) / base_close * 100
                     high_pct = (highs[t_idx] - base_close) / base_close * 100
                     low_val = fmt_t0(low_pct)
                     high_val = fmt_t0(high_pct)
-                    t_fields["T+0(低/高)"] = f"{low_val:+d}%/{high_val:+d}%"
+                    t_fields["T+0(低/高)"] = f"{fmt_no_sign(low_val)}%/{fmt_no_sign(high_val)}%({form})"
                 else:
-                    # T+1~6: 仅输出最高价，按规则②取整
+                    # T+1~6: 仅输出最高价(阴/阳/板)，为正不用+号，按规则②取整
                     high_pct = (highs[t_idx] - base_close) / base_close * 100
                     val = fmt_tn(high_pct)
-                    t_fields[f"T+{t_off}最高价"] = f"{val:+d}%"
+                    t_fields[f"T+{t_off}最高价"] = f"{fmt_no_sign(val)}%({form})"
             else:
                 if t_off == 0:
                     t_fields["T+0(低/高)"] = "N/A"
@@ -216,8 +246,9 @@ def screen_one(code, day_file, start_int, end_int):
             "股票名称": "",
             "D-1日期": fmt_date(dates_raw[dm1]),
             "D-1振幅": f"{amp_dm1:.2f}",
-            "D0涨幅": f"{d0_gain:+.2f}%",
+            "D0涨幅": f"{d0_gain:+.2f}",
             "D0振幅": f"{amp_d0:.2f}",
+            "D0阴/阳": d0_form,
             "D0/D-1成交额百分比": f"{amt_ratio:.2f}%",
         }
         row.update(t_fields)
@@ -281,7 +312,7 @@ def run_0803(start_date=DEFAULT_START, end_date=DEFAULT_END):
 
     columns = [
         "股票代码", "股票名称", "D-1日期",
-        "D-1振幅", "D0涨幅", "D0振幅", "D0/D-1成交额百分比",
+        "D-1振幅", "D0涨幅", "D0振幅", "D0阴/阳", "D0/D-1成交额百分比",
         "T+0(低/高)",
         "T+1最高价", "T+2最高价", "T+3最高价",
         "T+4最高价", "T+5最高价", "T+6最高价",
