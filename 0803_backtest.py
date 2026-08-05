@@ -11,7 +11,7 @@
 输出指标：
   D-1振幅（单日，不带%）、D0涨幅（带+号，不带%）、D0振幅（单日，不带%）、
   D0阴/阳、D0/D-1成交额百分比（带%）、
-  T+0(低/高)(阴/阳/板) ~ T+6最高价(阴/阳/板)（基准价=D0收盘价）
+  T+0(低/高)(阴/阳/板) ~ T+6最高价(仅板)（基准价=D0收盘价）
 """
 import sys
 import time
@@ -231,10 +231,13 @@ def screen_one(code, day_file, start_int, end_int):
                     high_val = fmt_t0(high_pct)
                     t_fields["T+0(低/高)"] = f"{fmt_no_sign(low_val)}%/{fmt_no_sign(high_val)}%({form})"
                 else:
-                    # T+1~6: 仅输出最高价(阴/阳/板)，为正不用+号，按规则②取整
+                    # T+1~6: 仅涨停时标注(板)，非涨停不标注形态
                     high_pct = (highs[t_idx] - base_close) / base_close * 100
                     val = fmt_tn(high_pct)
-                    t_fields[f"T+{t_off}最高价"] = f"{fmt_no_sign(val)}%({form})"
+                    if limits[t_idx]:
+                        t_fields[f"T+{t_off}最高价"] = f"{fmt_no_sign(val)}%(板)"
+                    else:
+                        t_fields[f"T+{t_off}最高价"] = f"{fmt_no_sign(val)}%"
             else:
                 if t_off == 0:
                     t_fields["T+0(低/高)"] = "N/A"
