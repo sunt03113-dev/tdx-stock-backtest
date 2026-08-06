@@ -90,7 +90,12 @@ def fmt_tn(val_pct):
 
 
 def fmt_signed(val):
-    """带符号格式化：正数带+，负数带-（支持数字和字符串）"""
+    """T+n用：正数不带+号，负数带-号"""
+    return str(val)
+
+
+def fmt_plus(val):
+    """涨幅用：正数带+号，负数带-号"""
     s = str(val)
     if not s.startswith("-"):
         return f"+{s}"
@@ -262,11 +267,11 @@ def screen_one(code, day_file, start_int, end_int):
             "股票名称": "",
             "样本日期": fmt_date(dates_raw[d0]),
             "D-1振幅": f"{amp_dm1:.2f}",
-            "D-0涨幅": fmt_signed(f"{d0_gain:.2f}"),
+            "D-0涨幅": fmt_plus(f"{d0_gain:.2f}"),
             "D-0振幅": f"{amp_d0:.2f}",
             "D-0 K线属性": d0_form,
-            "D-0最高价": fmt_signed(f"{d0_high_pct:.2f}"),
-            "D-0最低价": fmt_signed(f"{d0_low_pct:.2f}"),
+            "D-0最高价": fmt_plus(f"{d0_high_pct:.2f}"),
+            "D-0最低价": fmt_plus(f"{d0_low_pct:.2f}"),
             "D-0/D-1成交额百分比": f"{amt_ratio:.2f}%",
         }
         row.update(t_fields)
