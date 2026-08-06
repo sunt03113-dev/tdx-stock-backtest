@@ -237,29 +237,33 @@ def screen_one(code, day_file, start_int, end_int):
         # D-0/D-1 成交额百分比（带 %）
         amt_ratio = amounts[d0] / amounts[dm1] * 100 if amounts[dm1] > 0 else 0.0
 
-        # T+0 ~ T+6 股价走势（基准价 = D-0收盘价，收盘价变化值）
+        # T+0 ~ T+6 股价走势（基准价 = D-0收盘价）
         base_close = closes[d0]
         t_fields = {}
         for t_off in range(7):
             t_idx = d0 + 1 + t_off
             if t_idx < n and base_close > 0:
                 if t_off == 0:
-                    # T+0: 最低/最高价变化值(阴/阳/板)，带+号
+                    # T+0: 最低/最高价变化值%(阴/阳/板)，正数不带+号
                     low_pct = (lows[t_idx] - base_close) / base_close * 100
                     high_pct = (highs[t_idx] - base_close) / base_close * 100
                     low_val = fmt_t0(low_pct)
                     high_val = fmt_t0(high_pct)
                     form = candle_form(opens[t_idx], closes[t_idx], limits[t_idx])
-                    t_fields["T+0"] = f"{fmt_signed(low_val)}/{fmt_signed(high_val)}({form})"
+                    t_fields["T+0(低/高)"] = f"{fmt_signed(low_val)}%/{fmt_signed(high_val)}%({form})"
                 else:
-                    # T+1~6: 收盘价变化值，仅涨停标注(板)，带+号
-                    close_pct = (closes[t_idx] - base_close) / base_close * 100
-                    val = fmt_tn(close_pct)
+                    # T+1~6: 仅最高价变化值%，涨停标注(板)，正数不带+号
+                    high_pct = (highs[t_idx] - base_close) / base_close * 100
+                    val = fmt_tn(high_pct)
                     if limits[t_idx]:
-                        t_fields[f"T+{t_off}"] = f"{fmt_signed(val)}(板)"
+                        t_fields[f"T+{t_off}最高价"] = f"{fmt_signed(val)}%(板)"
                     else:
-                        t_fields[f"T+{t_off}"] = f"{fmt_signed(val)}"
+                        t_fields[f"T+{t_off}最高价"] = f"{fmt_signed(val)}%"
             else:
+                if t_off == 0:
+                    t_fields["T+0(低/高)"] = "N/A"
+                else:
+                    t_fields[f"T+{t_off}最高价"] = "N/A"
                 t_fields[f"T+{t_off}" if t_off > 0 else "T+0"] = "N/A"
 
         row = {
@@ -337,7 +341,7 @@ def run_0805(start_date=DEFAULT_START, end_date=DEFAULT_END):
         "股票代码", "股票名称", "样本日期",
         "D-1振幅", "D-0涨幅", "D-0振幅", "D-0 K线属性",
         "D-0最高价", "D-0最低价", "D-0/D-1成交额百分比",
-        "T+0", "T+1", "T+2", "T+3", "T+4", "T+5", "T+6",
+        "T+0(低/高)", "T+1最高价", "T+2最高价", "T+3最高价", "T+4最高价", "T+5最高价", "T+6最高价",
     ]
     result_df = result_df.reindex(columns=columns)
     result_df.to_excel(OUTPUT_FILE, index=False)
