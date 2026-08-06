@@ -238,15 +238,17 @@ def screen_one(code, day_file, start_int, end_int):
         for t_off in range(7):
             t_idx = d0 + 1 + t_off
             if t_idx < n and base_close > 0:
-                # 收盘价变化值
-                close_pct = (closes[t_idx] - base_close) / base_close * 100
                 if t_off == 0:
-                    # T+0: 变化值(阴/阳/板)，带+号
-                    val = fmt_t0(close_pct)
+                    # T+0: 最低/最高价变化值(阴/阳/板)，带+号
+                    low_pct = (lows[t_idx] - base_close) / base_close * 100
+                    high_pct = (highs[t_idx] - base_close) / base_close * 100
+                    low_val = fmt_t0(low_pct)
+                    high_val = fmt_t0(high_pct)
                     form = candle_form(opens[t_idx], closes[t_idx], limits[t_idx])
-                    t_fields["T+0"] = f"{fmt_signed(val)}({form})"
+                    t_fields["T+0"] = f"{fmt_signed(low_val)}/{fmt_signed(high_val)}({form})"
                 else:
-                    # T+1~6: 变化值，仅涨停标注(板)，带+号
+                    # T+1~6: 收盘价变化值，仅涨停标注(板)，带+号
+                    close_pct = (closes[t_idx] - base_close) / base_close * 100
                     val = fmt_tn(close_pct)
                     if limits[t_idx]:
                         t_fields[f"T+{t_off}"] = f"{fmt_signed(val)}(板)"
