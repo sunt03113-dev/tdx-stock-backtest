@@ -18,6 +18,7 @@
 """
 import math
 import logging
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import numpy as np
@@ -130,6 +131,81 @@ def precompute_limits(dates_raw, opens, highs, closes, code):
     return limits
 
 
+# ===================== 严格封死涨停（唯一权威口径，skill 写死） =====================
+
+# A 股涨跌停制度起始日（1996-12-16）
+LIMIT_UP_START_DATE = 19961216
+
+
+def is_limit_up_sealed_decimal(today_close, today_high, y_close, limit_ratio=Decimal("0.10")):
+    """
+    skill 权威口径的【标量 Decimal】实现，供对账/校验，勿在热循环调用。
+
+    规则（严格封死涨停，写死、不得漂移）：
+      涨停价 = 昨收 × (1 + limit_ratio)，ROUND_HALF_UP 四舍五入到分；
+      仅当 收盘价 == 涨停价 且 最高价 == 涨停价 才判为涨停。
+    严格相等 ==（不是 >=）：可自动剔除无涨跌幅限制日（新股上市初期、股改/停牌
+    复牌等）收盘价远超涨停价的异常 K 线。20cm 传 Decimal("0.20")。
+    """
+    if y_close is None or y_close <= 0:
+        return False
+    limit_price = (
+        Decimal(str(y_close)) * (Decimal("1") + limit_ratio)
+    ).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)
+    close_dec = Decimal(str(today_close)).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)
+    high_dec = Decimal(str(today_high)).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)
+    return close_dec == limit_price and high_dec == limit_price
+
+
+def compute_limit_flags(dates, close_c, high_c, code=None):
+    """
+    向量化【严格封死涨停】标记 —— 所有规则脚本统一调用的唯一权威实现。
+
+    与 is_limit_up_sealed_decimal 严格等价，但全程整数分比较，无浮点误差、可向量化：
+      涨停价（分）= ROUND_HALF_UP(昨收分 × 倍数 / 10)，整数 (x*11+5)//10、(x*12+5)//10
+      判涨停 = (收盘分 == 涨停价分) 且 (最高 分 == 涨停价分)
+    严格 ==（不是 >=），理由同标量版：剔除无涨跌幅限制日的超价异常 K 线。
+
+    参数:
+      dates   : np.ndarray[int] YYYYMMDD
+      close_c : np.ndarray[int] 收盘价（分，未 /100）
+      high_c  : np.ndarray[int] 最高价（分，未 /100）
+      code    : 6 位代码；None 时按 10cm 主板处理（仅纯主板脚本可省略）
+    返回:
+      np.ndarray[bool]，每个交易日是否严格封死涨停。
+    """
+    dates = np.asarray(dates, dtype=np.int64)
+    close_c = np.asarray(close_c, dtype=np.int64)
+    high_c = np.asarray(high_c, dtype=np.int64)
+    n = len(dates)
+    flags = np.zeros(n, dtype=bool)
+    if n < 2:
+        return flags
+
+    c = normalize_code(code) if code is not None else ""
+    valid = dates >= LIMIT_UP_START_DATE
+    pct = np.zeros(n, dtype=np.int8)
+    if c.startswith("688"):                       # 科创板：2019-07-22 起 20%
+        pct[valid] = 20
+    elif c.startswith(("300", "301")):            # 创业板：2020-08-24 起 20%，此前 10%
+        pct[valid & (dates >= GEM_20CM_DATE)] = 20
+        pct[valid & (dates < GEM_20CM_DATE)] = 10
+    else:                                         # 主板：10%
+        pct[valid] = 10
+
+    y_close_c = np.zeros(n, dtype=np.int64)
+    y_close_c[1:] = close_c[:-1]
+    lpc = np.zeros(n, dtype=np.int64)
+    m10 = pct == 10
+    m20 = pct == 20
+    lpc[m10] = (y_close_c[m10] * 11 + 5) // 10
+    lpc[m20] = (y_close_c[m20] * 12 + 5) // 10
+
+    flags = valid & (y_close_c > 0) & (lpc > 0) & (close_c == lpc) & (high_c == lpc)
+    flags[0] = False
+    return flags
+
+
 # ===================== 格式化函数 =====================
 
 def fmt_date(d_int):
@@ -226,8 +302,8 @@ def generate_t_fields(opens, highs, lows, closes, limits, base_idx, n, t_count=7
                 # T+0: 最低/最高价变化值%，附带阴/阳/板
                 low_pct = (lows[t_idx] - base_close) / base_close * 100
                 high_pct = (highs[t_idx] - base_close) / base_close * 100
-                low_val = fmt_t0(low_pct)
-                high_val = fmt_t0(high_pct)
+                low_val = fmt_t0(low_pct)    # T+0 最低价：向上取整（均变大）—— 唯一用 fmt_t0 的最高/最低价
+                high_val = fmt_tn(high_pct)  # T+0 最高价：向下取整（均变小）—— 与 T+1~T+7 最高价同规则
                 form = candle_form(opens[t_idx], closes[t_idx], limits[t_idx])
                 t_fields["T+0(低/高)"] = f"{fmt_no_sign(low_val)}%/{fmt_no_sign(high_val)}%({form})"
             else:
